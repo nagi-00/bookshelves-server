@@ -16,7 +16,7 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (출판사, 카테고리 정보 포함)
+// 2. 알라딘 검색 (목차 toc 정보 추가)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
@@ -35,18 +35,44 @@ app.get('/api/search', async (req, res) => {
             author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
             cover: i.cover.replace('http://', 'https://'),
             description: i.description || "",
-            publisher: i.publisher || "", // 출판사 정보 추출
-            genre: i.categoryName || ""   // 주제 분류 정보 추출
+            publisher: i.publisher || "",
+            genre: i.categoryName || "",
+            toc: i.toc || "" // [추가] 목차 정보 추출
         }));
         res.json(items);
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장 (Publisher, Genre 속성 추가)
+// 3. 노션 저장 (본문에 목차 콜아웃 추가)
 app.post('/api/notion/save', async (req, res) => {
-    const { token, db, title, author, cover, description, publisher, genre } = req.body;
+    const { token, db, title, author, cover, description, publisher, genre, toc } = req.body;
     const notion = new Client({ auth: token });
     try {
+        const children = [
+            { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
+            { object: 'block', type: 'divider', divider: {} }
+        ];
+
+        // [추가] 목차가 있을 경우에만 콜아웃 블록 생성
+        if (toc) {
+            children.push({
+                object: 'block',
+                type: 'callout',
+                callout: {
+                    rich_text: [{ text: { content: "목차\n" + toc.substring(0, 1500) } }], // 노션 글자수 제한 고려
+                    icon: { emoji: "📖" },
+                    color: "gray_background"
+                }
+            });
+            children.push({ object: 'block', type: 'divider', divider: {} });
+        }
+
+        children.push({ 
+            object: 'block', 
+            type: 'paragraph', 
+            paragraph: { rich_text: [{ text: { content: description || "" } }] } 
+        });
+
         await notion.pages.create({
             parent: { database_id: db },
             cover: { type: "external", external: { url: cover } },
@@ -54,16 +80,10 @@ app.post('/api/notion/save', async (req, res) => {
                 "title": { title: [{ text: { content: title } }] },
                 "Author": { rich_text: [{ text: { content: author } }] },
                 "Sum": { rich_text: [{ text: { content: description || "" } }] },
-                // [추가] Publisher 속성에 출판사 저장
                 "Publisher": { rich_text: [{ text: { content: publisher || "" } }] },
-                // [추가] Genre 속성에 주제 분류 저장
                 "Genre": { rich_text: [{ text: { content: genre || "" } }] }
             },
-            children: [
-                { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
-                { object: 'block', type: 'divider', divider: {} },
-                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "" } }] } }
-            ]
+            children: children
         });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
