@@ -16,7 +16,7 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (괄호 제거 로직 추가)
+// 2. 알라딘 검색 (괄호 제거 + 고해상도 이미지 처리)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
@@ -29,20 +29,21 @@ app.get('/api/search', async (req, res) => {
         if (!data.item) return res.json([]);
 
         res.json(data.item.map(i => {
-            // 작가 이름에서 (지은이), (옮긴이) 등 괄호 내용 삭제
             const cleanAuthor = i.author.replace(/\s*\(.*?\)/g, '').trim();
+            // 이미지 주소를 고해상도(cover500)로 변환
+            const highResCover = i.cover.replace(/cover\d+/, 'cover500').replace('mid', 'cover500');
             
             return {
                 title: i.title,
                 author: cleanAuthor,
-                cover: i.cover.replace('cover200', 'cover500').replace('mid', 'cover500'),
+                cover: highResCover,
                 description: i.description || "줄거리 정보가 없습니다."
             };
         }));
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장 (큰 이미지 & 줄거리 포함)
+// 3. 노션 저장
 app.post('/api/notion/save', async (req, res) => {
     const { token, db, title, author, cover, description } = req.body;
     const notion = new Client({ auth: token });
