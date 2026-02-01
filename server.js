@@ -1,93 +1,108 @@
-import express from 'express';
-import cors from 'cors';
-import fetch from 'node-fetch';
-import { Client } from '@notionhq/client';
+<script>
+    const SERVER_URL = "https://bookshelves-server.onrender.com";
+    const themes = ["e8bcbc", "f4f4bd", "c5e8c5", "a4c4e4", "ffffff", "1d1d1f"];
+    let step = 1, selectedColor = "ffffff";
+    const params = new URLSearchParams(window.location.search);
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('currentTime').innerText = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        document.getElementById('currentDate').innerText = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    setInterval(updateClock, 1000); updateClock();
 
-// 1. 노션 데이터베이스 목록 조회
-app.post('/api/notion/databases', async (req, res) => {
-    try {
-        const notion = new Client({ auth: req.body.token });
-        const response = await notion.search({ filter: { value: 'database', property: 'object' } });
-        res.json(response.results.map(db => ({ id: db.id, title: db.title[0]?.plain_text || 'Untitled' })));
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    function showSearch() {
+        document.getElementById('widgetHome').style.display = 'none';
+        document.getElementById('widgetSearch').style.display = 'flex';
+        document.getElementById('searchInput').focus();
+    }
 
-// 2. 알라딘 검색 (목차 toc 정보 추가)
-app.get('/api/search', async (req, res) => {
-    const { k, q } = req.query;
-    const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
-    
-    try {
-        const response = await fetch(url);
-        const text = await response.text();
-        let jsonStr = text.trim();
-        if (jsonStr.endsWith(';')) jsonStr = jsonStr.slice(0, -1);
-        const data = JSON.parse(jsonStr);
+    function goHome() {
+        document.getElementById('widgetSearch').style.display = 'none';
+        document.getElementById('widgetHome').style.display = 'flex';
+    }
 
-        if (!data.item) return res.json([]);
+    if (params.get('t')) {
+        document.body.classList.add('is-embed');
+        const c = params.get('c');
+        if(c) updateTheme('#'+c);
+    } else {
+        const pal = document.getElementById('palette');
+        themes.forEach(t => {
+            const d = document.createElement('div');
+            d.className = 'color-dot' + (t==='ffffff'?' active':'');
+            d.style.background = '#' + t;
+            d.onclick = () => {
+                document.querySelectorAll('.color-dot').forEach(el => el.classList.remove('active'));
+                d.classList.add('active');
+                updateTheme('#'+t);
+            };
+            pal.appendChild(d);
+        });
+    }
 
-        const items = data.item.map(i => ({
-            title: i.title,
-            author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
-            cover: i.cover.replace('http://', 'https://'),
-            description: i.description || "",
-            publisher: i.publisher || "",
-            genre: i.categoryName || "",
-            toc: i.toc || "" // [추가] 목차 정보 추출
-        }));
-        res.json(items);
-    } catch (e) { res.status(500).json({ error: "Search Failed" }); }
-});
+    function updateTheme(hex) {
+        selectedColor = hex.replace('#', '');
+        document.documentElement.style.setProperty('--theme-color', hex);
+        const r = parseInt(selectedColor.slice(0,2), 16), g = parseInt(selectedColor.slice(2,4), 16), b = parseInt(selectedColor.slice(4,6), 16);
+        const darkR = Math.max(0, r - 100), darkG = Math.max(0, g - 100), darkB = Math.max(0, b - 100);
+        document.documentElement.style.setProperty('--dark-theme-color', `rgb(${darkR},${darkG},${darkB})`);
+        document.documentElement.style.setProperty('--hover-color', `rgba(${r},${g},${b},0.12)`);
+    }
 
-// 3. 노션 저장 (본문에 목차 콜아웃 추가)
-app.post('/api/notion/save', async (req, res) => {
-    const { token, db, title, author, cover, description, publisher, genre, toc } = req.body;
-    const notion = new Client({ auth: token });
-    try {
-        const children = [
-            { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
-            { object: 'block', type: 'divider', divider: {} }
-        ];
-
-        // [추가] 목차가 있을 경우에만 콜아웃 블록 생성
-        if (toc) {
-            children.push({
-                object: 'block',
-                type: 'callout',
-                callout: {
-                    rich_text: [{ text: { content: "목차\n" + toc.substring(0, 1500) } }], // 노션 글자수 제한 고려
-                    icon: { emoji: "📖" },
-                    color: "gray_background"
-                }
+    async function moveStep(n) {
+        if (n === 1 && step === 1) {
+            const tk = document.getElementById('tokenInput').value;
+            const res = await fetch(`${SERVER_URL}/api/notion/databases`, { 
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: tk })
             });
-            children.push({ object: 'block', type: 'divider', divider: {} });
+            const dbs = await res.json();
+            document.getElementById('dbSelect').innerHTML = dbs.map(d => `<option value="${d.id}">${d.title}</option>`).join('');
         }
+        if (step + n === 4) {
+            const t = btoa(document.getElementById('tokenInput').value);
+            const d = btoa(document.getElementById('dbSelect').value);
+            const k = btoa(document.getElementById('ttbInput').value);
+            const url = `${window.location.origin}${window.location.pathname}?t=${t}&d=${d}&k=${k}&c=${selectedColor}`;
+            navigator.clipboard.writeText(url); alert("위젯 생성 성공! 🤍"); return;
+        }
+        document.getElementById(`step${step}`).classList.remove('active');
+        step += n;
+        document.getElementById(`step${step}`).classList.add('active');
+        document.getElementById('prevBtn').disabled = (step === 1);
+    }
 
-        children.push({ 
-            object: 'block', 
-            type: 'paragraph', 
-            paragraph: { rich_text: [{ text: { content: description || "" } }] } 
+    async function performSearch() {
+        const query = document.getElementById('searchInput').value;
+        const res = await fetch(`${SERVER_URL}/api/search?k=${atob(params.get('k'))}&q=${encodeURIComponent(query)}`);
+        const books = await res.json();
+        document.getElementById('resultList').innerHTML = books.map(b => {
+            const safeData = encodeURIComponent(JSON.stringify(b));
+            return `
+            <div class="book-card" onclick="saveToNotion('${safeData}')">
+                <img src="${b.cover}" class="book-cover" onerror="this.src='https://via.placeholder.com/150x200?text=No+Image'">
+                <div class="book-info"><div class="b-title">${b.title}</div><div class="b-author">${b.author}</div></div>
+            </div>
+        `}).join('');
+    }
+
+    async function saveToNotion(encodedData) {
+        const book = JSON.parse(decodeURIComponent(encodedData));
+        const res = await fetch(`${SERVER_URL}/api/notion/save`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                token: atob(params.get('t')), 
+                db: atob(params.get('d')), 
+                ...book 
+            })
         });
-
-        await notion.pages.create({
-            parent: { database_id: db },
-            cover: { type: "external", external: { url: cover } },
-            properties: {
-                "title": { title: [{ text: { content: title } }] },
-                "Author": { rich_text: [{ text: { content: author } }] },
-                "Sum": { rich_text: [{ text: { content: description || "" } }] },
-                "Publisher": { rich_text: [{ text: { content: publisher || "" } }] },
-                "Genre": { rich_text: [{ text: { content: genre || "" } }] }
-            },
-            children: children
-        });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+        const data = await res.json();
+        if(data.success) {
+            const t = document.getElementById('toast');
+            t.classList.add('show'); 
+            setTimeout(() => { t.classList.remove('show'); goHome(); }, 2000);
+        } else {
+            alert("저장 실패: " + data.error);
+        }
+    }
+</script>
