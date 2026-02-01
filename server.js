@@ -16,7 +16,7 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (고해상도 이미지 변환)
+// 2. 알라딘 검색
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
@@ -26,20 +26,7 @@ app.get('/api/search', async (req, res) => {
         let jsonStr = text.trim();
         if (jsonStr.endsWith(';')) jsonStr = jsonStr.slice(0, -1);
         const data = JSON.parse(jsonStr);
-        if (!data.item) return res.json([]);
-
-        res.json(data.item.map(i => {
-            const cleanAuthor = i.author.replace(/\s*\(.*?\)/g, '').trim();
-            // 고해상도 이미지 변환 로직
-            const highResCover = i.cover.replace(/cover\d+/, 'cover500').replace('mid', 'cover500').replace('sum', 'cover500');
-            
-            return {
-                title: i.title,
-                author: cleanAuthor,
-                cover: highResCover,
-                description: i.description || "줄거리 정보가 없습니다."
-            };
-        }));
+        res.json(data.item || []);
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
@@ -58,7 +45,7 @@ app.post('/api/notion/save', async (req, res) => {
             children: [
                 { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
                 { object: 'block', type: 'divider', divider: {} },
-                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description } }] } }
+                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "" } }] } }
             ]
         });
         res.json({ success: true });
