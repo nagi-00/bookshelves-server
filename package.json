@@ -1,11 +1,19 @@
 {
   "name": "bookshelves-server",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Bookshelves Cooker Server",
   "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
+    "@notionhq/client": "^2.2.14",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "node-fetch": "^3.3.0",
-    "cors": "^2.8.5"
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
