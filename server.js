@@ -16,7 +16,7 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색
+// 2. 알라딘 검색 (고해상도 이미지 변환 강화)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
@@ -26,11 +26,25 @@ app.get('/api/search', async (req, res) => {
         let jsonStr = text.trim();
         if (jsonStr.endsWith(';')) jsonStr = jsonStr.slice(0, -1);
         const data = JSON.parse(jsonStr);
-        res.json(data.item || []);
+        if (!data.item) return res.json([]);
+
+        res.json(data.item.map(i => {
+            const cleanAuthor = i.author.replace(/\s*\(.*?\)/g, '').trim();
+            // 썸네일 경로를 고해상도 서버(cover500)로 강제 치환
+            let highResCover = i.cover.replace(/cover\d+/, 'cover500');
+            if (!highResCover.includes('cover500')) highResCover = highResCover.replace('sum', 'cover500').replace('mid', 'cover500');
+            
+            return {
+                title: i.title,
+                author: cleanAuthor,
+                cover: highResCover,
+                description: i.description || "줄거리 정보가 없습니다."
+            };
+        }));
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장
+// 3. 노션 저장 (고화질 커버 적용)
 app.post('/api/notion/save', async (req, res) => {
     const { token, db, title, author, cover, description } = req.body;
     const notion = new Client({ auth: token });
@@ -45,7 +59,13 @@ app.post('/api/notion/save', async (req, res) => {
             children: [
                 { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
                 { object: 'block', type: 'divider', divider: {} },
-                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "" } }] } }
+                { object: 'block', type: 'heading_2', heading_2: { rich_text: [{ text: { content: title } }] } },
+                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: `저자: ${author}` }, annotations: { italic: true } }] } },
+                { object: 'block', type: 'callout', callout: { 
+                    rich_text: [{ text: { content: description } }],
+                    icon: { emoji: "📖" },
+                    color: "gray_background"
+                }}
             ]
         });
         res.json({ success: true });
