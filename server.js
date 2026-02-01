@@ -64,7 +64,7 @@
             const d = btoa(document.getElementById('dbSelect').value);
             const k = btoa(document.getElementById('ttbInput').value);
             const url = `${window.location.origin}${window.location.pathname}?t=${t}&d=${d}&k=${k}&c=${selectedColor}`;
-            navigator.clipboard.writeText(url); alert("위젯 생성 성공! 🤍"); return;
+            navigator.clipboard.writeText(url); alert("위젯 생성 성공! 노션에 붙여넣으세요. 🤍"); return;
         }
         document.getElementById(`step${step}`).classList.remove('active');
         step += n;
@@ -77,6 +77,7 @@
         const res = await fetch(`${SERVER_URL}/api/search?k=${atob(params.get('k'))}&q=${encodeURIComponent(query)}`);
         const books = await res.json();
         document.getElementById('resultList').innerHTML = books.map(b => {
+            // 아카이빙 실패 방지를 위한 데이터 인코딩
             const safeData = encodeURIComponent(JSON.stringify(b));
             return `
             <div class="book-card" onclick="saveToNotion('${safeData}')">
