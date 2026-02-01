@@ -30,7 +30,7 @@ app.get('/api/search', async (req, res) => {
 
         res.json(data.item.map(i => {
             const cleanAuthor = i.author.replace(/\s*\(.*?\)/g, '').trim();
-            // 모든 타입의 알라딘 썸네일을 cover500(원본)으로 변환
+            // 썸네일 경로를 고해상도 서버(cover500)로 강제 치환
             let highResCover = i.cover.replace(/cover\d+/, 'cover500');
             if (!highResCover.includes('cover500')) highResCover = highResCover.replace('sum', 'cover500').replace('mid', 'cover500');
             
@@ -44,7 +44,7 @@ app.get('/api/search', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장
+// 3. 노션 저장 (고화질 커버 적용)
 app.post('/api/notion/save', async (req, res) => {
     const { token, db, title, author, cover, description } = req.body;
     const notion = new Client({ auth: token });
