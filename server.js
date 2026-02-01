@@ -16,7 +16,7 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (이미지 엑박 방지 로직 포함)
+// 2. 알라딘 검색 (가장 안정적인 이미지 주소 사용)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
@@ -27,11 +27,13 @@ app.get('/api/search', async (req, res) => {
         if (jsonStr.endsWith(';')) jsonStr = jsonStr.slice(0, -1);
         const data = JSON.parse(jsonStr);
 
-        // 이미지 경로를 cover500(고화질)으로 강제 변환하여 엑박 방지
-        const items = (data.item || []).map(i => ({
+        if (!data.item) return res.json([]);
+
+        const items = data.item.map(i => ({
             title: i.title,
             author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
-            cover: i.cover.replace(/cover\d+/, 'cover500').replace('mid', 'cover500').replace('sum', 'cover500'),
+            // 강제 변환 대신 원본 주소에서 프로토콜과 불필요한 파라미터만 정제
+            cover: i.cover.replace('http://', 'https://').trim(),
             description: i.description || ""
         }));
         res.json(items);
@@ -45,6 +47,7 @@ app.post('/api/notion/save', async (req, res) => {
     try {
         await notion.pages.create({
             parent: { database_id: db },
+            // 노션은 https 주소를 선호합니다.
             cover: { type: "external", external: { url: cover } },
             properties: {
                 "title": { title: [{ text: { content: title } }] },
@@ -57,7 +60,10 @@ app.post('/api/notion/save', async (req, res) => {
             ]
         });
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        console.error(e);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 const PORT = process.env.PORT || 3000;
