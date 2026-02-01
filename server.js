@@ -7,7 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. 노션 DB 목록 조회
+// 1. 노션 데이터베이스 목록 조회
 app.post('/api/notion/databases', async (req, res) => {
     try {
         const notion = new Client({ auth: req.body.token });
@@ -22,79 +22,73 @@ app.post('/api/notion/databases', async (req, res) => {
         }));
         res.json(dbs);
     } catch (error) {
-        console.error("Notion DB Error:", error);
+        console.error("Notion DB Fetch Error:", error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 2. 알라딘 도서 검색 (오류 수정됨)
+// 2. 알라딘 도서 검색 (고화질 이미지 로직 포함)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
-    // JS 형식으로 받아서 처리 (JSON 응답이 불안정할 때가 많음)
+    // output=js로 호출하여 더 안정적인 데이터를 받아옵니다.
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
 
     try {
         const response = await fetch(url);
         const text = await response.text();
         
-        // 알라딘은 가끔 'var item = [...];' 형태의 문자열을 줍니다. 이걸 JSON으로 발라냅니다.
-        // 혹은 끝에 세미콜론(;)이 붙어있어 파싱 에러가 날 수 있습니다.
-        let jsonStr = text;
-        if (text.trim().endsWith(';')) {
-            jsonStr = text.trim().slice(0, -1); // 마지막 세미콜론 제거
-        }
+        // 알라딘 API 특유의 세미콜론 제거 및 파싱
+        let jsonStr = text.trim();
+        if (jsonStr.endsWith(';')) jsonStr = jsonStr.slice(0, -1);
         
-        // 만약 response가 object가 아니라 string이라면 파싱 시도
-        let data;
-        try {
-            data = JSON.parse(jsonStr);
-        } catch (e) {
-            // 알라딘 특유의 에러 메시지 처리 or 재시도 로직 필요하지만 일단 에러 반환
-            throw new Error("알라딘 API 응답을 해석할 수 없습니다. TTB키를 확인하세요.");
-        }
+        const data = JSON.parse(jsonStr);
 
-        if (!data.item) {
-            return res.json([]); // 결과 없음
-        }
+        if (!data.item) return res.json([]);
 
-        const books = data.item.map(i => ({
-            title: i.title,
-            author: i.author,
-            cover: i.cover.replace('cover200', 'cover500') // 고화질 커버
-        }));
+        const books = data.item.map(i => {
+            // [고화질 처리] 저화질 식별자(cover200, mid)를 고화질(cover500)로 치환
+            let highResCover = i.cover;
+            if (highResCover.includes('cover200')) {
+                highResCover = highResCover.replace('cover200', 'cover500');
+            } else if (highResCover.includes('mid')) {
+                highResCover = highResCover.replace('mid', 'cover500');
+            }
+            
+            return {
+                title: i.title,
+                author: i.author,
+                cover: highResCover
+            };
+        });
         res.json(books);
 
     } catch (error) {
         console.error("Aladin Search Error:", error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: "검색 중 오류가 발생했습니다." });
     }
 });
 
-// 3. 노션 저장 (속성명 표준화)
+// 3. 노션 데이터베이스에 도서 저장
 app.post('/api/notion/save', async (req, res) => {
     const { token, db, title, author, cover } = req.body;
     const notion = new Client({ auth: token });
 
     try {
-        // Notion에 저장할 때 Property 이름이 중요합니다.
-        // 사용자의 DB에 '제목', '저자' 등의 이름이 다를 수 있어 기본값(title, rich_text)을 사용합니다.
-        // *주의: 사용자의 DB 첫번째 컬럼(제목)은 반드시 속성 유형이 Title이어야 합니다.
-        
         await notion.pages.create({
             parent: { database_id: db },
-            cover: { type: "external", external: { url: cover } }, // 페이지 커버
+            // 페이지 상단 커버 이미지 설정 (고화질)
+            cover: { type: "external", external: { url: cover } },
             properties: {
-                "title": { // 보통 제목 속성의 ID는 'title'입니다.
+                // 노션 DB의 기본 '제목' 속성 (ID는 보통 'title')
+                "title": { 
                     title: [{ text: { content: title } }] 
                 },
-                // 저자 등을 본문에 넣을지 속성에 넣을지 고민되지만, 
-                // 범용성을 위해 속성 이름이 'Author'나 '저자'인 경우를 시도해보고
-                // 없으면 본문에만 넣는 방식이 안전할 수 있습니다. 
-                // 여기선 일단 'Author'라는 텍스트 속성을 생성하려고 시도합니다.
+                // 'Author'라는 이름의 텍스트 속성이 DB에 있어야 합니다.
                 "Author": { 
                     rich_text: [{ text: { content: author } }] 
                 }
             },
+            // 페이지 본문에 커버 이미지 삽입
             children: [
                 {
                     object: 'block',
@@ -106,8 +100,7 @@ app.post('/api/notion/save', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         console.error("Notion Save Error:", error);
-        // 속성 이름 오류일 확률이 높음 -> 사용자에게 안내
-        res.status(500).json({ error: "노션 저장 실패. 데이터베이스에 'Author'라는 텍스트 속성이 있는지 확인해주세요." });
+        res.status(500).json({ error: "노션 저장 실패. 'Author' 속성이 있는지 확인하세요." });
     }
 });
 
