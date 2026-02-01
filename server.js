@@ -16,10 +16,9 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (Cover=Big 적용)
+// 2. 알라딘 검색 (출판사, 카테고리 정보 포함)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
-    // 매뉴얼에 명시된 Cover=Big 파라미터를 사용하여 너비 200px 이미지를 가져옵니다.
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
     
     try {
@@ -35,15 +34,17 @@ app.get('/api/search', async (req, res) => {
             title: i.title,
             author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
             cover: i.cover.replace('http://', 'https://'),
-            description: i.description || ""
+            description: i.description || "",
+            publisher: i.publisher || "", // 출판사 정보 추출
+            genre: i.categoryName || ""   // 주제 분류 정보 추출
         }));
         res.json(items);
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장 (Sum 속성 추가)
+// 3. 노션 저장 (Publisher, Genre 속성 추가)
 app.post('/api/notion/save', async (req, res) => {
-    const { token, db, title, author, cover, description } = req.body;
+    const { token, db, title, author, cover, description, publisher, genre } = req.body;
     const notion = new Client({ auth: token });
     try {
         await notion.pages.create({
@@ -52,13 +53,16 @@ app.post('/api/notion/save', async (req, res) => {
             properties: {
                 "title": { title: [{ text: { content: title } }] },
                 "Author": { rich_text: [{ text: { content: author } }] },
-                // [추가] Sum 이라는 이름의 텍스트(rich_text) 속성에 줄거리 저장
-                "Sum": { rich_text: [{ text: { content: description || "내용 없음" } }] }
+                "Sum": { rich_text: [{ text: { content: description || "" } }] },
+                // [추가] Publisher 속성에 출판사 저장
+                "Publisher": { rich_text: [{ text: { content: publisher || "" } }] },
+                // [추가] Genre 속성에 주제 분류 저장
+                "Genre": { rich_text: [{ text: { content: genre || "" } }] }
             },
             children: [
                 { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
                 { object: 'block', type: 'divider', divider: {} },
-                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "내용 없음" } }] } }
+                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "" } }] } }
             ]
         });
         res.json({ success: true });
