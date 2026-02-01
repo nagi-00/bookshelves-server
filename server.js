@@ -16,7 +16,7 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (괄호 제거 + 고해상도 이미지 처리)
+// 2. 알라딘 검색 (고해상도 이미지 변환 강화)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
@@ -30,8 +30,9 @@ app.get('/api/search', async (req, res) => {
 
         res.json(data.item.map(i => {
             const cleanAuthor = i.author.replace(/\s*\(.*?\)/g, '').trim();
-            // 이미지 주소를 고해상도(cover500)로 변환
-            const highResCover = i.cover.replace(/cover\d+/, 'cover500').replace('mid', 'cover500');
+            // 모든 타입의 알라딘 썸네일을 cover500(원본)으로 변환
+            let highResCover = i.cover.replace(/cover\d+/, 'cover500');
+            if (!highResCover.includes('cover500')) highResCover = highResCover.replace('sum', 'cover500').replace('mid', 'cover500');
             
             return {
                 title: i.title,
