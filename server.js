@@ -16,10 +16,12 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (사용자 요청: 고화질 cover500 주소 강제 추출)
+// 2. 알라딘 검색 (매뉴얼 기준 Cover=Big 적용)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
-    const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101`;
+    // 매뉴얼에 따라 Cover=Big 파라미터를 추가하여 최대 크기(200px) 이미지를 요청합니다.
+    const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
+    
     try {
         const response = await fetch(url);
         const text = await response.text();
@@ -29,23 +31,18 @@ app.get('/api/search', async (req, res) => {
 
         if (!data.item) return res.json([]);
 
-        const items = data.item.map(i => {
-            // 원본 주소에서 규격 부분(mid, sum, cover 등)을 정확히 찾아 cover500으로 교체
-            let coverUrl = i.cover.replace('http://', 'https://');
-            coverUrl = coverUrl.replace(/\/(mid|sum|cover|cover200)\//i, '/cover500/');
-
-            return {
-                title: i.title,
-                author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
-                cover: coverUrl,
-                description: i.description || ""
-            };
-        });
+        const items = data.item.map(i => ({
+            title: i.title,
+            author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
+            // API가 반환한 Big 사이즈 이미지 주소를 사용하고, 보안을 위해 https로 변경합니다.
+            cover: i.cover.replace('http://', 'https://'),
+            description: i.description || ""
+        }));
         res.json(items);
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장 (이미지 임베드 포함)
+// 3. 노션 저장
 app.post('/api/notion/save', async (req, res) => {
     const { token, db, title, author, cover, description } = req.body;
     const notion = new Client({ auth: token });
@@ -60,7 +57,7 @@ app.post('/api/notion/save', async (req, res) => {
             children: [
                 { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
                 { object: 'block', type: 'divider', divider: {} },
-                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "설명 없음" } }] } }
+                { object: 'block', type: 'paragraph', paragraph: { rich_text: [{ text: { content: description || "내용 없음" } }] } }
             ]
         });
         res.json({ success: true });
