@@ -7,28 +7,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. 노션 데이터베이스 목록 조회 (디버깅 강화)
+// 1. 노션 데이터베이스 목록 조회
 app.post('/api/notion/databases', async (req, res) => {
     try {
-        const token = req.body.token?.trim();
-        if (!token) return res.status(400).json({ error: "토큰이 입력되지 않았습니다." });
-
-        const notion = new Client({ auth: token });
-        const response = await notion.search({ 
-            filter: { value: 'database', property: 'object' } 
-        });
-
-        if (response.results.length === 0) {
-            return res.status(404).json({ error: "연결된 데이터베이스가 없습니다. 노션 페이지 설정에서 '연결 추가'를 확인하세요." });
-        }
-
-        res.json(response.results.map(db => ({ 
-            id: db.id, 
-            title: db.title[0]?.plain_text || 'Untitled' 
-        })));
-    } catch (e) { 
-        res.status(500).json({ error: `노션 연결 오류: ${e.message}` }); 
-    }
+        const notion = new Client({ auth: req.body.token });
+        const response = await notion.search({ filter: { value: 'database', property: 'object' } });
+        res.json(response.results.map(db => ({ id: db.id, title: db.title[0]?.plain_text || 'Untitled' })));
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // 2. 알라딘 검색 (고해상도 이미지 변환)
@@ -45,8 +30,8 @@ app.get('/api/search', async (req, res) => {
 
         res.json(data.item.map(i => {
             const cleanAuthor = i.author.replace(/\s*\(.*?\)/g, '').trim();
-            let highResCover = i.cover.replace(/cover\d+/, 'cover500');
-            if (!highResCover.includes('cover500')) highResCover = highResCover.replace('sum', 'cover500').replace('mid', 'cover500');
+            // 고해상도 이미지 변환 로직
+            const highResCover = i.cover.replace(/cover\d+/, 'cover500').replace('mid', 'cover500').replace('sum', 'cover500');
             
             return {
                 title: i.title,
