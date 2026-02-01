@@ -16,10 +16,10 @@ app.post('/api/notion/databases', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. 알라딘 검색 (매뉴얼 기준 Cover=Big 적용)
+// 2. 알라딘 검색 (Cover=Big 적용)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
-    // 매뉴얼에 따라 Cover=Big 파라미터를 추가하여 최대 크기(200px) 이미지를 요청합니다.
+    // 매뉴얼에 명시된 Cover=Big 파라미터를 사용하여 너비 200px 이미지를 가져옵니다.
     const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
     
     try {
@@ -34,7 +34,6 @@ app.get('/api/search', async (req, res) => {
         const items = data.item.map(i => ({
             title: i.title,
             author: i.author.replace(/\s*\(.*?\)/g, '').trim(),
-            // API가 반환한 Big 사이즈 이미지 주소를 사용하고, 보안을 위해 https로 변경합니다.
             cover: i.cover.replace('http://', 'https://'),
             description: i.description || ""
         }));
@@ -42,7 +41,7 @@ app.get('/api/search', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Search Failed" }); }
 });
 
-// 3. 노션 저장
+// 3. 노션 저장 (Sum 속성 추가)
 app.post('/api/notion/save', async (req, res) => {
     const { token, db, title, author, cover, description } = req.body;
     const notion = new Client({ auth: token });
@@ -52,7 +51,9 @@ app.post('/api/notion/save', async (req, res) => {
             cover: { type: "external", external: { url: cover } },
             properties: {
                 "title": { title: [{ text: { content: title } }] },
-                "Author": { rich_text: [{ text: { content: author } }] }
+                "Author": { rich_text: [{ text: { content: author } }] },
+                // [추가] Sum 이라는 이름의 텍스트(rich_text) 속성에 줄거리 저장
+                "Sum": { rich_text: [{ text: { content: description || "내용 없음" } }] }
             },
             children: [
                 { object: 'block', type: 'image', image: { type: 'external', external: { url: cover } } },
