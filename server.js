@@ -19,7 +19,10 @@ app.post('/api/notion/databases', async (req, res) => {
 // 2. 알라딘 검색 (공식 Big 커버 사용)
 app.get('/api/search', async (req, res) => {
     const { k, q } = req.query;
-    const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${k}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
+    // 키 우선순위: 클라이언트가 보낸 k > 서버 환경변수 TTB_KEY(내장 기본키)
+    const ttbkey = (k && k.trim()) ? k.trim() : process.env.TTB_KEY;
+    if (!ttbkey) return res.status(500).json({ error: "No TTB key configured" });
+    const url = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${ttbkey}&Query=${encodeURIComponent(q)}&QueryType=Title&MaxResults=20&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
     try {
         const response = await fetch(url);
         const text = await response.text();
